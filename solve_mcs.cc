@@ -3,8 +3,6 @@
 
 #include <algorithm>
 #include <iostream>
-#include <numeric>
-#include <random>
 #include <set>
 #include <vector>
 
@@ -161,12 +159,6 @@ namespace {
             ReachedGoal
         };
 
-        auto is_bound_minimum_possible(unsigned bound, unsigned matching_size_goal) -> bool
-        {
-            return bound == incumbent.size() + 1 ||
-                    (params.mcsplit_down && bound == matching_size_goal);
-        }
-
         auto search(
                 vector<Assignment> & current,
                 DomainStore & domain_store,
@@ -196,23 +188,23 @@ namespace {
             int v = find_min_value(domain_store.left, bd.l, bd.left_len);
 
             // Try assigning v to each vertex w in the colour class beginning at bd.r, in turn
-            std::vector<int> possible_values(domain_store.right.begin() + bd.r,  // the vertices in the colour class beginning at bd.r
-                    domain_store.right.begin() + bd.r + bd.right_len);
-            std::sort(possible_values.begin(), possible_values.end());
+            auto right_label_class_begin = domain_store.right.begin() + bd.r;
+            auto right_label_class_end = right_label_class_begin + bd.right_len;
+            int & right_label_class_last_elem = *std::prev(right_label_class_end);
+            std::sort(right_label_class_begin, right_label_class_end);
 
             remove_vtx_from_left_domain(domain_store.left, bd, v);
             bd.right_len--;
 
-            for (int w : possible_values) {
+            for (auto it=right_label_class_begin; it!=right_label_class_end; ++it) {
+                int w = *it;
                 current.push_back({v, w});
-                // swap w to the end of its colour class
-                auto it = std::find(domain_store.right.begin() + bd.r, domain_store.right.end(), w);
-                *it = domain_store.right[bd.r + bd.right_len];
-                domain_store.right[bd.r + bd.right_len] = w;
+                std::swap(*it, right_label_class_last_elem); // swap w to the end of its label class
 
                 auto new_domain_store = refined_domains(domain_store, v, w);
                 Search search_result = search(current, new_domain_store, matching_size_goal);
                 current.pop_back();
+                std::swap(*it, right_label_class_last_elem); // swap w back to its correct place in the sorted label class
                 switch (search_result)
                 {
                 case Search::Aborted:     return Search::Aborted;
@@ -226,12 +218,6 @@ namespace {
             if (bd.left_len == 0)
                 remove_bidomain(domain_store.domains, bd_idx);
             return search(current, domain_store, matching_size_goal);
-        }
-
-        auto run_search(DomainStore domain_store, unsigned int matching_size_goal) -> void
-        {
-            vector<Assignment> current;
-            search(current, domain_store, matching_size_goal);
         }
 
     public:
@@ -250,15 +236,19 @@ namespace {
 
             domain_store.domains.push_back({0, 0, g0.n, g1.n});
 
+            vector<Assignment> current;
+
 	    if (params.mcsplit_down) {
 		for (unsigned int goal = std::min(g0.n, g1.n) ; goal > 0 ; --goal) {
 		    if (incumbent.size() == goal) break;
-		    run_search(domain_store, goal);
+                    auto domain_store_copy = domain_store;
+                    search(current, domain_store_copy, goal);
 		    if (incumbent.size() == goal || abort_due_to_timeout) break;
 		    if (!params.quiet) cout << "Upper bound: " << goal-1 << std::endl;
+                    cout << stats.nodes << std::endl;
 		}
 	    } else {
-                run_search(domain_store, std::min(g0.n, g1.n));
+                search(current, domain_store, std::min(g0.n, g1.n));
 	    }
 
             return {incumbent, stats};
@@ -266,22 +256,22 @@ namespace {
     };
 };
 
+auto vertices_sorted_by_degree(Graph & g) -> vector<int>
+{
+    auto deg = calculate_degrees(g);
+    vector<int> vv(g.n);
+    std::iota(std::begin(vv), std::end(vv), 0);
+    std::stable_sort(std::begin(vv), std::end(vv), [&](int a, int b) {
+        return deg[a] > deg[b];
+    });
+    return vv;
+}
+
 auto solve_mcs(Graph & g0, Graph & g1, Params params)
 		-> std::pair<vector<Assignment>, McsStats>
 {
-    auto g0_deg = calculate_degrees(g0);
-    auto g1_deg = calculate_degrees(g1);
-
-    vector<int> vv0(g0.n);
-    std::iota(std::begin(vv0), std::end(vv0), 0);
-    std::stable_sort(std::begin(vv0), std::end(vv0), [&](int a, int b) {
-        return g0_deg[a] > g0_deg[b];
-    });
-    vector<int> vv1(g1.n);
-    std::iota(std::begin(vv1), std::end(vv1), 0);
-    std::stable_sort(std::begin(vv1), std::end(vv1), [&](int a, int b) {
-        return g1_deg[a] > g1_deg[b];
-    });
+    auto vv0 = vertices_sorted_by_degree(g0);
+    auto vv1 = vertices_sorted_by_degree(g1);
 
     struct Graph g0_sorted = induced_subgraph(g0, vv0);
     struct Graph g1_sorted = induced_subgraph(g1, vv1);
