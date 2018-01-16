@@ -31,11 +31,7 @@ static struct argp_option options[] = {
     {"verbose", 'v', 0, 0, "Verbose output"},
     {"dimacs", 'd', 0, 0, "Read DIMACS format"},
     {"lad", 'l', 0, 0, "Read LAD format"},
-    {"connected", 'c', 0, 0, "Solve max common CONNECTED subgraph problem"},
-    {"directed", 'i', 0, 0, "Use directed graphs"},
-    {"labelled", 'a', 0, 0, "Use edge and vertex labels"},
     {"mcsplit-down", 'm', 0, 0, "Use the McSplit-down algorithm rather than branch and bound"},
-    {"vertex-labelled-only", 'x', 0, 0, "Use vertex labels, but not edge labels"},
     {"timeout", 't', "timeout", 0, "Specify a timeout (seconds)"},
     { 0 }
 };
@@ -45,10 +41,6 @@ struct Arguments {
     bool verbose;
     bool dimacs;
     bool lad;
-    bool connected;
-    bool directed;
-    bool edge_labelled;
-    bool vertex_labelled;
     bool mcsplit_down;
     Heuristic heuristic;
     char *filename1;
@@ -76,27 +68,6 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
             break;
         case 'v':
             arguments.verbose = true;
-            break;
-        case 'c':
-            if (arguments.directed)
-                fail("The connected and directed options can't be used together.");
-            arguments.connected = true;
-            break;
-        case 'i':
-            if (arguments.connected)
-                fail("The connected and directed options can't be used together.");
-            arguments.directed = true;
-            break;
-        case 'a':
-            if (arguments.vertex_labelled)
-                fail("The -a and -x options can't be used together.");
-            arguments.edge_labelled = true;
-            arguments.vertex_labelled = true;
-            break;
-        case 'x':
-            if (arguments.edge_labelled)
-                fail("The -a and -x options can't be used together.");
-            arguments.vertex_labelled = true;
             break;
         case 'm':
             arguments.mcsplit_down = true;
@@ -151,8 +122,6 @@ bool check_sol(const Graph & g0, const Graph & g1 , const vector<Assignment> & s
             return false;
         used_left[p0.v] = true;
         used_right[p0.w] = true;
-        if (g0.label[p0.v] != g1.label[p0.w])
-            return false;
         for (unsigned int j=i+1; j<solution.size(); j++) {
             struct Assignment p1 = solution[j];
             if (g0.adjmat[p0.v][p1.v] != g1.adjmat[p0.w][p1.w])
@@ -166,10 +135,8 @@ int main(int argc, char** argv) {
     argp_parse(&argp, argc, argv, 0, 0, 0);
 
     char format = arguments.dimacs ? 'D' : arguments.lad ? 'L' : 'B';
-    struct Graph g0 = readGraph(arguments.filename1, format, arguments.directed,
-            arguments.edge_labelled, arguments.vertex_labelled);
-    struct Graph g1 = readGraph(arguments.filename2, format, arguments.directed,
-            arguments.edge_labelled, arguments.vertex_labelled);
+    struct Graph g0 = readGraph(arguments.filename1, format);
+    struct Graph g1 = readGraph(arguments.filename2, format);
 
     std::thread timeout_thread;
     std::mutex timeout_mutex;
@@ -201,10 +168,6 @@ int main(int argc, char** argv) {
     Params params = {
         arguments.quiet,
         arguments.verbose,
-        arguments.connected,
-        arguments.directed,
-        arguments.edge_labelled,
-        arguments.vertex_labelled,
         arguments.mcsplit_down,
         arguments.heuristic,
         start

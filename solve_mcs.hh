@@ -11,10 +11,6 @@ enum class Heuristic {
 struct Params {
     bool quiet;
     bool verbose;
-    bool connected;
-    bool directed;
-    bool edge_labelled;
-    bool vertex_labelled;
     bool mcsplit_down;
     Heuristic heuristic;
     std::chrono::time_point<std::chrono::steady_clock> start_time;
